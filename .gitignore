@@ -1,0 +1,6 @@
+# Android / Gradle build artifacts (not needed in source-only submodule copies)
+**/build/
+**/.gradle/
+**/.idea/
+**/local.properties
+*.iml
