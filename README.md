@@ -31,19 +31,6 @@ required so you can grant the runtime permission prompts:
 - **Nearby devices / Bluetooth** (if prompted) — required to detect the
   connected headset
 
-Android does not auto-launch apps right after install, so this one manual
-open is unavoidable on a plain `adb install` — after that first launch,
-Whistle runs its recognition service in the background whenever another
-app (or the device's default assistant/mic key) requests it.
-
-> Tip: if you have adb access and want to skip the manual tap, you can
-> pre-grant permissions instead:
-> ```bash
-> adb shell pm grant com.example.qnnwhistle android.permission.RECORD_AUDIO
-> adb shell pm grant com.example.qnnwhistle android.permission.POST_NOTIFICATIONS
-> adb shell pm grant com.example.qnnwhistle android.permission.BLUETOOTH_CONNECT
-> adb shell am start -n com.example.qnnwhistle/.MainActivity
-> ```
 
 ### Re-installing / testing fresh installs
 
@@ -55,21 +42,7 @@ before testing.
 
 ## 2. Connect a Bluetooth headset
 
-1. On the device, go to **Settings → Bluetooth** and pair your headset
-   (standard HFP/SCO headset — the kind used for phone calls, not an
-   A2DP-only music speaker).
-2. Once paired and connected, open Whistle — it automatically detects the
-   Bluetooth SCO audio path and routes the mic through it. No extra
-   in-app Bluetooth setting is needed.
-3. If you see `"Connect a Bluetooth or USB audio device"` or
-   `"Failed to activate Bluetooth audio. Try reconnecting headset"`:
-   - Make sure the headset is actually **connected** (not just paired) —
-     check the Bluetooth icon/status in the system notification shade.
-   - Toggle Bluetooth off/on, or disconnect and reconnect the headset,
-     then reopen Whistle.
-   - A USB audio adapter/headset works as a fallback if you don't have a
-     Bluetooth headset handy.
-
+1. pair a bluetooth headset as Ixx camera does not have a builtin Mic
 ---
 
 ## 3. Install and try the Consumer (demo) app
@@ -109,11 +82,4 @@ broadcast names) if you want to integrate Whistle into your own app instead.
 
 ---
 
-## Troubleshooting
 
-| Symptom | Fix |
-|---|---|
-| "Microphone permission" error even though it looks granted | Permission was likely reset by an uninstall/reinstall — re-grant it (see step 1) and reopen the app. |
-| `ERROR_INSUFFICIENT_PERMISSIONS` (error 9) from `SpeechRecognizer` | Don't construct `SpeechRecognizer` with an explicit `ComponentName`; let it resolve to the system default (Whistle). |
-| No audio captured / "No supported audio input found" | No Bluetooth SCO headset or USB audio device connected — see step 2. |
-| App doesn't start automatically after install | Expected Android behavior — open it once manually, or use the `adb` pre-grant commands above. |
