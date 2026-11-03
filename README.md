@@ -10,6 +10,7 @@ third-party developers.
 |---|---|
 | `apks/QnnWhistle-RecognitionService.apk` | The Whistle app — runs the recognition service and the normal app UI. ~34MB, Whistle-only build. |
 | `apks/RecognitionConsumer.apk` | A small demo app showing 3 different ways to call Whistle from your own app. |
+| `apks/QnnPiperTts-signed.apk` | Offline Piper TTS engine — a standard Android `TextToSpeechService` (speech-to-text's counterpart: text→speech). ~94MB (bundles the Piper voice model). |
 | `consumer-app-src/` | Full Kotlin source for the demo app above. |
 | `whistle-asr-src/` | Full source for the Whistle app itself (models excluded — see `whistle-asr-src/app/src/main/assets/MODELS_README.md`). |
 | `INTEGRATION_GUIDE.md` | Code-level guide for developers who want to call Whistle from their own app. |
@@ -111,6 +112,35 @@ cd whistle-asr-src
 ./gradlew assembleDebug
 adb install -r app/build/outputs/apk/debug/app-debug.apk
 ```
+
+---
+
+## 6. Install the offline TTS engine (speech output)
+
+`apks/QnnPiperTts-signed.apk` is the text-to-speech counterpart to Whistle —
+a standard Android `TextToSpeechService` running a local Piper voice model
+fully offline (no network, no Google TTS).
+
+```bash
+adb install -r apks/QnnPiperTts-signed.apk
+```
+
+Open it once (so the Piper engine initializes), then set it as the default
+engine:
+
+```bash
+adb shell settings put secure tts_default_synth com.example.qnnpiper
+```
+
+Any app using the standard `android.speech.tts.TextToSpeech` client API
+(e.g. `TextToSpeech(context, listener)` → `speak(...)`) will now route
+through Piper and play over your connected Bluetooth headset. Note: the
+Settings app's own "Listen to an example" **PLAY** button in
+*Settings → Accessibility → Text-to-speech* is unreliable on this device/
+build (it doesn't always invoke the engine) — this is a quirk of the
+Settings UI itself, not the engine; test via a real TTS-consuming app or
+`adb shell am start` with `TtsEngines` instead if you want to validate
+end-to-end.
 
 ---
 
