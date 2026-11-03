@@ -11,6 +11,7 @@ third-party developers.
 | `apks/QnnWhistle-RecognitionService.apk` | The Whistle app — runs the recognition service and the normal app UI. ~34MB, Whistle-only build. |
 | `apks/RecognitionConsumer.apk` | A small demo app showing 3 different ways to call Whistle from your own app. |
 | `consumer-app-src/` | Full Kotlin source for the demo app above. |
+| `whistle-asr-src/` | Full source for the Whistle app itself (models excluded — see `whistle-asr-src/app/src/main/assets/MODELS_README.md`). |
 | `INTEGRATION_GUIDE.md` | Code-level guide for developers who want to call Whistle from their own app. |
 
 This device has **no built-in microphone** — audio input requires a
@@ -79,6 +80,18 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 See `INTEGRATION_GUIDE.md` for the full API surface (actions, extras,
 broadcast names) if you want to integrate Whistle into your own app instead.
+
+---
+
+## 5. Building Whistle itself from source
+
+```bash
+cd whistle-asr-src
+# copy the 3 missing ONNX model files into app/src/main/assets/ first —
+# see app/src/main/assets/MODELS_README.md
+./gradlew assembleDebug
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
 
 ---
 
