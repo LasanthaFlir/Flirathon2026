@@ -13,6 +13,8 @@ import android.os.Build
 import android.util.Log
 import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.math.sqrt
 
 /**
@@ -36,27 +38,43 @@ class MicRecorder(
     private val context: Context,
     private val scope: CoroutineScope,
     private val decoder: Transcriber,
-    private val onResult: (String) -> Unit,   // called on Main thread
+    private val onResult: (String) -> Unit,   // called on Main thread — final text for a finished utterance
     private val onStatus: (String) -> Unit,   // called on Main thread
-    private val onError:  (String) -> Unit    // called on Main thread
+    private val onError:  (String) -> Unit,   // called on Main thread
+    private val onPartial: (String) -> Unit = {}  // called on Main thread — live, in-progress text while still speaking
 ) {
     companion object {
         private const val TAG               = "MicRecorder"
         private const val SAMPLE_RATE       = 16_000
         private const val FRAME_SAMPLES     = 1_600          // 100ms per VAD frame
         private const val PREROLL_FRAMES    = 3              // 300ms pre-roll before speech onset
-        private const val SILENCE_FRAMES    = 20             // 2000ms silence to end an utterance (was 8, too short)
+        // 1200ms silence to end an utterance. 8 frames (800ms) was tried before and
+        // cut off trailing words too eagerly; 20 (2000ms) felt sluggish to the user.
+        // 12 is a middle ground — tune further if either symptom reappears.
+        private const val SILENCE_FRAMES    = 12
         private const val MAX_FRAMES        = 60             // 6s hard cap (matches QNN encoder)
         private const val MIN_SPEECH_FRAMES = 5              // ignore <500ms noise bursts
         private const val SCO_TIMEOUT_MS    = 10_000L
         private const val CALIBRATION_FRAMES = 20            // 2s to capture ambient noise spikes
+        // How often (in VAD frames) to re-decode the in-progress utterance and
+        // surface a live partial result while the user is still talking.
+        private const val PARTIAL_INTERVAL_FRAMES = 10        // ~1000ms
+        private const val PARTIAL_MIN_SPEECH_FRAMES = MIN_SPEECH_FRAMES
     }
 
     private val audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val segmentCh = Channel<ShortArray>(capacity = 4)
 
+    // The QNN/ONNX decoder is not safe for concurrent invocation (single inference
+    // context) — live partial decodes and the final end-of-utterance decode must
+    // never run at the same time. The final decode (via segmentCh/inferJob) always
+    // takes the lock; partial decodes use tryLock so they just skip a cycle instead
+    // of queuing up and falling behind if the final decode is already running.
+    private val decodeMutex = Mutex()
+
     private var recordJob: Job? = null
     private var inferJob: Job? = null
+    private var partialJob: Job? = null
     private var usingBtSco = false
 
     // Sensitivity-driven VAD thresholds (read from Prefs at construction).
@@ -80,8 +98,12 @@ class MicRecorder(
                 withContext(Dispatchers.Main) {
                     onStatus("Transcribing (${segment.size / SAMPLE_RATE}s)…")
                 }
+                // Final decode always wins over an in-flight partial: cancel any
+                // partial job and wait for the lock rather than tryLock-skipping,
+                // since dropping the final result is not acceptable.
+                partialJob?.cancel()
                 val text = try {
-                    decoder.transcribe(segment)
+                    decodeMutex.withLock { decoder.transcribe(segment) }
                 } catch (e: Exception) {
                     Log.e(TAG, "Transcription error", e)
                     "(error)"
@@ -299,6 +321,7 @@ class MicRecorder(
             val speech  = ArrayList<ShortArray>(MAX_FRAMES)
             var silenceCount = 0
             var speaking = false
+            var framesSincePartial = 0
 
             // Calibrate noise floor over CALIBRATION_FRAMES (2s). We use a high
             // percentile (not the raw max) of the per-frame RMS values: a single
@@ -348,6 +371,7 @@ class MicRecorder(
                     if (voiced) {
                         speaking = true
                         silenceCount = 0
+                        framesSincePartial = 0
                         speech.addAll(preroll)
                         preroll.clear()
                         Log.i(TAG, ">>> SPEECH ONSET: energy=${"%.1f".format(energy)} threshold=${"%.1f".format(threshold)} (preroll=${speech.size} frames)")
@@ -376,6 +400,42 @@ class MicRecorder(
                         speech.clear()
                         silenceCount = 0
                     }
+
+                    // Live partial: re-decode the in-progress utterance every
+                    // ~1s so the caller can show updating text while the user
+                    // is still talking, without waiting for the end-of-speech
+                    // silence timeout. Skipped (not queued) if a decode is
+                    // already in flight, so partials never pile up or race
+                    // the eventual final decode.
+                    if (speaking) {
+                        framesSincePartial++
+                        if (framesSincePartial >= PARTIAL_INTERVAL_FRAMES &&
+                            speech.size >= PARTIAL_MIN_SPEECH_FRAMES &&
+                            partialJob?.isActive != true
+                        ) {
+                            framesSincePartial = 0
+                            val snapshot = concatFrames(speech)
+                            partialJob = scope.launch(Dispatchers.IO) {
+                                if (decodeMutex.tryLock()) {
+                                    try {
+                                        val text = try {
+                                            decoder.transcribe(snapshot)
+                                        } catch (e: Exception) {
+                                            Log.e(TAG, "Partial transcription error", e)
+                                            null
+                                        }
+                                        if (!text.isNullOrBlank()) {
+                                            withContext(Dispatchers.Main) { onPartial(text) }
+                                        }
+                                    } finally {
+                                        decodeMutex.unlock()
+                                    }
+                                } else {
+                                    Log.d(TAG, "Skipping partial decode — final decode in progress")
+                                }
+                            }
+                        }
+                    }
                 }
             }
 
@@ -388,11 +448,19 @@ class MicRecorder(
         }
     }
 
-    private suspend fun flushSegment(frames: List<ShortArray>) {
-        if (frames.size < MIN_SPEECH_FRAMES) return
+    /** Flattens a snapshot of VAD frames into one contiguous PCM buffer, without
+     *  mutating the source list — used both for the final flush and for
+     *  live partial decodes mid-utterance. */
+    private fun concatFrames(frames: List<ShortArray>): ShortArray {
         val out = ShortArray(frames.sumOf { it.size })
         var pos = 0
         for (f in frames) { f.copyInto(out, pos); pos += f.size }
+        return out
+    }
+
+    private suspend fun flushSegment(frames: List<ShortArray>) {
+        if (frames.size < MIN_SPEECH_FRAMES) return
+        val out = concatFrames(frames)
         
         val durationSec = out.size / 16000.0  // Always 16kHz after upsampling
         Log.i(TAG, "Sending segment: ${frames.size} frames, ${out.size} samples = ${String.format("%.2f", durationSec)}s")

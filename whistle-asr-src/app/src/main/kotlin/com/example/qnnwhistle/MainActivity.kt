@@ -100,6 +100,12 @@ class MainActivity : AppCompatActivity() {
                     val text = intent.getStringExtra(TranscriptionService.EXTRA_TEXT) ?: return
                     binding.tvStatus.text = text
                 }
+                TranscriptionService.ACTION_PARTIAL -> {
+                    val text = intent.getStringExtra(TranscriptionService.EXTRA_TEXT) ?: return
+                    // Live preview only — not appended to tvResult, which holds
+                    // finalized text; superseded by the next partial or final result.
+                    binding.tvStatus.text = "🗣 $text"
+                }
                 TranscriptionService.ACTION_ERROR -> {
                     val text = intent.getStringExtra(TranscriptionService.EXTRA_TEXT) ?: return
                     toast(text)
@@ -256,6 +262,7 @@ class MainActivity : AppCompatActivity() {
             addAction(TranscriptionService.ACTION_STATUS)
             addAction(TranscriptionService.ACTION_ERROR)
             addAction(TranscriptionService.ACTION_READY)
+            addAction(TranscriptionService.ACTION_PARTIAL)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(serviceReceiver, f, Context.RECEIVER_NOT_EXPORTED)

@@ -64,6 +64,9 @@ class TranscriptionService : Service() {
         const val ACTION_STATUS = "com.example.qnnwhistle.STATUS"
         const val ACTION_ERROR  = "com.example.qnnwhistle.ERROR"
         const val ACTION_READY  = "com.example.qnnwhistle.READY"
+        /** Live, in-progress transcript while the user is still talking (extra [EXTRA_TEXT]).
+         *  Superseded by the next ACTION_PARTIAL or the final ACTION_RESULT — don't append. */
+        const val ACTION_PARTIAL = "com.example.qnnwhistle.PARTIAL"
         const val EXTRA_TEXT    = "text"
 
         private const val CHANNEL_ID = "qnn_whistle_transcribe"
@@ -266,6 +269,10 @@ class TranscriptionService : Service() {
                 broadcastError(msg)
                 stopListening()
                 stopForeground(STOP_FOREGROUND_REMOVE)
+            },
+            onPartial = { text ->
+                Log.d(TAG, "Partial: $text")
+                broadcastPartial(text)
             }
         )
         micRecorder!!.start()
@@ -367,5 +374,6 @@ class TranscriptionService : Service() {
     private fun broadcastResult(text: String) = broadcastBoth(ACTION_RESULT, text)
     private fun broadcastStatus(text: String) = broadcastBoth(ACTION_STATUS, text)
     private fun broadcastError(text: String)  = broadcastBoth(ACTION_ERROR, text)
+    private fun broadcastPartial(text: String) = broadcastBoth(ACTION_PARTIAL, text)
     private fun broadcastReady()              = broadcastBoth(ACTION_READY)
 }

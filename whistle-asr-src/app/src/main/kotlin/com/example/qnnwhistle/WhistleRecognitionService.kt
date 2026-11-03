@@ -158,6 +158,17 @@ class WhistleRecognitionService : RecognitionService() {
             onError = {
                 Log.e(TAG, "MicRecorder error: $it")
                 deliverErrorAndFinish(s, SpeechRecognizer.ERROR_AUDIO)
+            },
+            onPartial = { text ->
+                synchronized(lock) { if (session !== s || s.finished) return@MicRecorder }
+                val b = Bundle().apply {
+                    putStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION, arrayListOf(text))
+                }
+                try {
+                    s.callback.partialResults(b)
+                } catch (e: Exception) {
+                    Log.e(TAG, "Failed to deliver partial results", e)
+                }
             }
         )
 

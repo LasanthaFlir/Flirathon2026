@@ -35,6 +35,11 @@ class MainActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private var recogRunning = false
     private var pendingRecognizerStart = false
+    // Start index in `log`'s text of the current in-progress partial-result
+    // line, so each new partial update replaces it in place instead of
+    // appending a new line every ~1s (which otherwise reprints the whole
+    // in-progress sentence over and over as it grows).
+    private var partialLineStart = -1
     private var recognizer: SpeechRecognizer? = null
     private var pulseAnimators: List<ObjectAnimator> = emptyList()
 
@@ -223,6 +228,13 @@ class MainActivity : AppCompatActivity() {
             text = "Voice via RecognizerIntent"
             setOnClickListener { launchRecognizerIntent() }
         }
+        val clearButton = Button(this).apply {
+            text = "Clear Log"
+            setOnClickListener {
+                log.text = ""
+                partialLineStart = -1
+            }
+        }
         statusDot = View(this).apply {
             layoutParams = LinearLayout.LayoutParams(36, 36).apply {
                 marginEnd = 24
@@ -243,7 +255,7 @@ class MainActivity : AppCompatActivity() {
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             addView(statusBar)
-            addView(recogButton); addView(intentButton); addView(pick); addView(logScroll)
+            addView(recogButton); addView(intentButton); addView(pick); addView(clearButton); addView(logScroll)
         })
 
         // Register for the lifetime of the activity (NOT the visibility lifecycle),
@@ -365,7 +377,7 @@ class MainActivity : AppCompatActivity() {
                             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
                             ?.firstOrNull()
                             .orEmpty()
-                        if (partial.isNotBlank()) appendLog("… RS partial: $partial\n")
+                        if (partial.isNotBlank()) updatePartialLog("… RS partial: $partial\n")
                     }
                     override fun onEvent(eventType: Int, params: Bundle?) {}
                 })
@@ -398,7 +410,10 @@ class MainActivity : AppCompatActivity() {
 
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, false)
+            // Whistle now emits live partial results every ~1s while the user is
+            // still talking (see MicRecorder's partial-decode loop) — request them
+            // so onPartialResults() below actually gets called.
+            putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         }
         try {
             recognizer?.cancel()
@@ -442,6 +457,26 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun appendLog(line: String) {
+        // Any non-partial log line finalizes whatever partial preview was
+        // in progress — the next partial starts a fresh line after this one.
+        partialLineStart = -1
+        appendLogRaw(line)
+    }
+
+    /** Updates the live in-progress partial-result line in place instead of
+     *  appending a new one, so the log shows a single growing sentence while
+     *  the user is talking rather than reprinting it every ~1s. */
+    private fun updatePartialLog(line: String) {
+        val current = log.text
+        if (partialLineStart in 0..current.length) {
+            log.text = current.substring(0, partialLineStart)
+        } else {
+            partialLineStart = current.length
+        }
+        appendLogRaw(line)
+    }
+
+    private fun appendLogRaw(line: String) {
         // Keep memory bounded — drop the oldest half of the buffer once we go
         // over MAX_LOG_CHARS. Without this a long session would slowly grow
         // unbounded.
@@ -449,6 +484,7 @@ class MainActivity : AppCompatActivity() {
         if (current.length + line.length > MAX_LOG_CHARS) {
             val keepFrom = (current.length + line.length) - (MAX_LOG_CHARS / 2)
             log.text = current.substring(keepFrom.coerceAtMost(current.length))
+            partialLineStart = -1   // buffer was trimmed — partial-line index no longer valid
         }
         log.append(line)
         // Auto-scrolling is handled by the ScrollView's layout-change listener

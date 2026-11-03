@@ -88,6 +88,14 @@ buttons demonstrating the 3 integration paths described in
 With your Bluetooth headset connected, tap **Start Voice Recognition**,
 speak, and the transcribed text appears in the app.
 
+**v2 update:** Whistle now emits **live partial transcriptions** while you
+are still speaking (updated roughly once per second), instead of waiting
+for the post-speech silence timeout (shortened from 2s to 1.2s) before
+showing any text. The consumer app (v2) shows partials updating in place
+on a single line, followed by the final result, and has a **Clear Log**
+button to reset the conversation view. Previous (v1) APKs are kept in this
+folder as `*-v1-backup.apk` in case you need to roll back.
+
 ---
 
 ## 4. Building the consumer app from source
