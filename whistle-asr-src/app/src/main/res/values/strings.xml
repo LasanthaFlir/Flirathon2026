@@ -1,0 +1,20 @@
+<resources>
+    <string name="app_name">Whistle ASR</string>
+
+    <!-- Header / status -->
+    <string name="status_idle">Tap “Enable voice-to-text” to load the Whistle model</string>
+    <string name="status_loading">Loading Whistle speech model…</string>
+    <string name="status_ready">✅ Whistle voice-to-text is enabled — use the mic or pick a WAV file</string>
+    <string name="status_ready_short">Ready</string>
+
+    <!-- Buttons -->
+    <string name="btn_enable">🎙️ Enable voice-to-text</string>
+    <string name="btn_enable_again">🔄 Reload model</string>
+    <string name="btn_pick">Pick WAV File</string>
+    <string name="btn_mic_start">🎤 Start Mic</string>
+    <string name="btn_mic_stop">⏹ Stop Mic</string>
+
+    <!-- Section labels -->
+    <string name="label_transcription">Transcription:</string>
+    <string name="subtitle_enable">One-time setup: loads the Whistle CPU model. Takes a moment.</string>
+</resources>
