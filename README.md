@@ -39,6 +39,25 @@ Runtime permissions do **not** survive an uninstall — if you uninstall and
 reinstall, re-grant them (or re-open the app and accept the prompts again)
 before testing.
 
+### Troubleshooting: consumer app keeps hitting a permission error
+
+**Both apps need Microphone permission** — not just the one calling
+`SpeechRecognizer`. Whistle itself records the audio on the client's behalf,
+so if Whistle's own Microphone permission was never granted (e.g. it was
+installed via `adb install` but never opened/accepted), any client calling
+it will fail with `ERROR_INSUFFICIENT_PERMISSIONS` / "caller without
+permission RECORD_AUDIO" — **even though the client app shows Microphone as
+granted**. Check both:
+
+```bash
+adb shell dumpsys package com.example.qnnwhistle       | grep RECORD_AUDIO
+adb shell dumpsys package com.example.moonshineconsumer | grep RECORD_AUDIO
+```
+
+If Whistle's says `granted=false`, open the Whistle app once and accept the
+Microphone prompt (or `adb shell pm grant com.example.qnnwhistle
+android.permission.RECORD_AUDIO`).
+
 ---
 
 ## 2. Connect a Bluetooth headset
